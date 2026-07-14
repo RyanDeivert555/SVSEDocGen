@@ -3,45 +3,38 @@ using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace DocGen;
 
-public static class FoundationPlan
-{
-    public static string ParseIntoInstructions(string filename, string letterType)
-    {
-        if (letterType != "FPR" && letterType != "PPR" && letterType != "GPR")
-        {
-            throw new ArgumentException("Report type must be either FPR, PPR, or GPR");
-        }
+public static class FoundationPlan {
+    public enum LetterType {
+        FPR,
+        PPR,
+        GPR,
+    }
+
+    public static string ParseIntoInstructions(string filename) {
         // Key = Raw Placeholder, Value = Gemini Prompt
         var instructionsMap = new Dictionary<string, string>();
 
-        using (var wordDoc = WordprocessingDocument.Open(filename, false))
-        {
+        using (var wordDoc = WordprocessingDocument.Open(filename, false)) {
             var body = wordDoc.MainDocumentPart!.Document!.Body!;
 
-            foreach (var paragraph in body.Descendants<Paragraph>())
-            {
+            foreach (var paragraph in body.Descendants<Paragraph>()) {
                 var currentGroup = new List<Run>();
                 var highlightedGroups = new List<string>();
 
-                foreach (var run in paragraph.Descendants<Run>())
-                {
-                    if (run.RunProperties?.Highlight != null)
-                    {
+                foreach (var run in paragraph.Descendants<Run>()) {
+                    if (run.RunProperties?.Highlight is not null) {
                         currentGroup.Add(run);
                     }
-                    else if (currentGroup.Any())
-                    {
+                    else if (currentGroup.Any()) {
                         highlightedGroups.Add(string.Join("", currentGroup.Select(r => r.InnerText)).Trim());
                         currentGroup.Clear();
                     }
                 }
-                if (currentGroup.Any())
-                {
+                if (currentGroup.Any()) {
                     highlightedGroups.Add(string.Join("", currentGroup.Select(r => r.InnerText)).Trim());
                 }
 
-                foreach (var templateInstruction in highlightedGroups)
-                {
+                foreach (var templateInstruction in highlightedGroups) {
                     if (string.IsNullOrWhiteSpace(templateInstruction)) continue;
                     if (instructionsMap.ContainsKey(templateInstruction)) continue;
 
@@ -59,56 +52,40 @@ public static class FoundationPlan
         }
     }
 
-    private static void EditRun(List<Run> highlightedRuns, Dictionary<string, string> instructionMap)
-    {
-        string instructionKey = string.Join("", highlightedRuns.Select(r => r.InnerText)).Trim();
+    private static void EditRun(List<Run> highlightedRuns, Dictionary<string, string> instructionMap) {
+        var instructionKey = string.Join("", highlightedRuns.Select(r => r.InnerText)).Trim();
 
-        if (instructionMap.TryGetValue(instructionKey, out var replacementText))
-        {
+        if (instructionMap.TryGetValue(instructionKey, out var replacementText)) {
             var firstRun = highlightedRuns.First();
             firstRun.RemoveAllChildren<Text>();
             firstRun.AppendChild(new Text(replacementText));
 
-            foreach (var run in highlightedRuns.Skip(1))
-            {
+            foreach (var run in highlightedRuns.Skip(1)) {
                 run.RemoveAllChildren<Text>();
             }
-
-            // foreach (var run in highlightedRuns)
-            // {
-            //     run.RunProperties!.RemoveChild(run.RunProperties.Highlight);
-            // }
         }
-
     }
 
-    public static void EditDoc(string response, string filepath)
-    {
+    public static void EditDoc(string response, string filepath) {
         var resultsMap = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(response)!;
 
-        using (var wordDoc = WordprocessingDocument.Open(filepath, true))
-        {
+        using (var wordDoc = WordprocessingDocument.Open(filepath, true)) {
             var body = wordDoc.MainDocumentPart!.Document!.Body!;
-            foreach (var paragraph in body.Descendants<Paragraph>())
-            {
+            foreach (var paragraph in body.Descendants<Paragraph>()) {
                 var currentGroup = new List<Run>();
-                var runs = paragraph.Descendants<Run>().ToList();
+                var runs = paragraph.Descendants<Run>();
 
-                foreach (var run in runs)
-                {
-                    if (run.RunProperties?.Highlight is not null)
-                    {
+                foreach (var run in runs) {
+                    if (run.RunProperties?.Highlight is not null) {
                         currentGroup.Add(run);
                     }
-                    else if (currentGroup.Any())
-                    {
+                    else if (currentGroup.Any()) {
                         EditRun(currentGroup, resultsMap);
                         currentGroup.Clear();
                     }
                 }
 
-                if (currentGroup.Any())
-                {
+                if (currentGroup.Any()) {
                     EditRun(currentGroup, resultsMap);
                 }
             }
@@ -117,5 +94,3 @@ public static class FoundationPlan
         }
     }
 }
-
-public static class GIReport {}

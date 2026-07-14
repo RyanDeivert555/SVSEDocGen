@@ -8,70 +8,74 @@
 // Descision tree
 // Soil expansion: low, liquifaction, high, determined by PI value
 
-internal class Program
-{
-    static IEnumerable<string> GetUploadFiles()
-    {
-        return System.IO.Directory.GetFiles(".")
-            .Where(fn => fn.EndsWith(".pdf"));
-    }
-
-    static async Task Main()
-    {
+internal class Program {
+    internal static async Task Main() {
         Console.WriteLine("Current files in directory: ");
-        foreach (var file in System.IO.Directory.GetFiles(".")) 
-        {
+        string[] fsFiles = System.IO.Directory.GetFiles(".");
+        foreach (var file in fsFiles) {
             Console.WriteLine(file);
         }
         Console.WriteLine();
 
         Console.Write("Enter plan type (FPR, GPR, or PPR): ");
         string letterType = Console.ReadLine()!.Trim();
-        while (letterType != "FPR" && letterType != "PPR" && letterType != "GPR")
-        {
+        while (letterType != "FPR" && letterType != "PPR" && letterType != "GPR") {
             Console.Write("Illegal plan type, please type FPR, GPR, or PPR: ");
             letterType = Console.ReadLine()!.Trim();
         }
+        var letterEnum = Enum.Parse<DocGen.FoundationPlan.LetterType>(letterType);
 
         string templateDocDocx = "template.docx";
-        string letterTitle = letterType switch
-        {
-            "FPR" => "FOUNDATION PLAN REVIEW",
-            "PPR" => "PROJECT PLAN REVIEW",
-            "GPR" => "GRADING & DRAINING PLAN REVIEW",
+        string letterTitle = letterEnum switch {
+            DocGen.FoundationPlan.LetterType.FPR => "FOUNDATION PLAN REVIEW",
+            DocGen.FoundationPlan.LetterType.PPR => "PROJECT PLAN REVIEW",
+            DocGen.FoundationPlan.LetterType.GPR => "GRADING & DRAINING PLAN REVIEW",
             _ => throw new ArgumentException($"Report type must be either FPR, PPR, or GPR, illegal chosen option is {letterType}"),
         };
-        string outputDocPath = "final.docx";
+        var outputDocPath = "final.docx";
 
         Console.Write("Type any other additional instructions you would like to give the AI (Press enter to submit or skip): ");
         // TODO: should this be nullable and drillable?
-        string additionInstructions = Console.ReadLine()!.Trim();
+        string? additionInstructions = Console.ReadLine()?.Trim();
 
         System.IO.File.Copy(templateDocDocx, outputDocPath, true);
 
         Console.WriteLine("Uploading pdfs to Gemini");
-        var tasks = GetUploadFiles().Select(fs => AiQuery.UploadFile(fs));
+        var tasks = fsFiles
+            .Where(s => s.EndsWith(".pdf"))
+            .Select(fs => AiQuery.UploadFile(fs));
         var responses = await Task.WhenAll(tasks);
 
-        var instructions = DocGen.FoundationPlan.ParseIntoInstructions(templateDocDocx, letterType);
+        var instructions = DocGen.FoundationPlan.ParseIntoInstructions(templateDocDocx);
         var prompt = $@"You are an expert Geotechnical Engineering Assistant. 
                     Your job is to accurately extract project metadata from Geotechnical Investigation (GI) reports to draft legal Foundation Plan Review letters. 
-                    Precision is critical.
+                    Precision is critical, as this is a legal document.
 
-                    Analyze the two attached PDF reports, which is a geotechnical investigation and a site plan. 
-                    I will provide you a JSON array of keys representing data fields I need. 
-                    For each key in the array, find the corresponding factual answer in the PDFs.
-                    Each piece of data that needs to be replaced will be format like {{Data}}
-                    Return a flat JSON object where the keys match my list exactly, and the values are your extractions.
-                    Make sure that not only the data is correct, but small things like capitalization and grammar are correct.
-                    If you fail to find context for the field to be replaced, it is best to not do any replacement.
+                    TASK:
+                    For each key in the FIELDS TO EXTRACT list, find the factual value in the PDFs. Return a flat JSON object whose keys match the list exactly. Return ONLY the JSON object, no other text.
 
-                    If you find additional information to add that might be important, such as other structural plan, do your best effort to add that information.
+                    EXTRACTION RULES:
+                    - Extract only what is explicitly stated in the documents. Do not infer, add, or embellish.
+                    - If a value cannot be found, return an empty string for that key. Never guess.
+                    - Dates must be formatted as 'Month D, YYYY' (e.g., 'January 8, 2025').
+                    - Job numbers, sheet numbers, and file numbers must be copied character-for-character.
 
-                    The title of the letter is {letterTitle}.
-                    The type of the letter is a {letterType}.
-                    The current date is {DateTime.Now}.
-                    Additional instructions given by user: {additionInstructions}.
+                    TERMINOLOGY RULES (override whatever wording the source documents use):
+                    - Always refer to the reviewed plans as the 'Foundation Plan', never 'Structural Plans' or 'Structural Drawings', even if the drawings are titled that way.
+                    - The GI report is referred to as the 'Geotechnical Investigation report'.
+                    - Do not use the public project number, use the company's job number
+
+                    CAPITALIZATION RULES:
+                    - Document titles are capitalized: 'Foundation Plan', 'Geotechnical Investigation report', 'Foundation Plan Review'.
+                    - Ordinary nouns in running text are lowercase: 'the subject site', 'the proposed residence' is capitalized only when used as the project title ('Proposed Residence').
+                    - Names of firms and people must match the source exactly.
+                    - Never output all-caps values unless the source field is an acronym or the template requires it.
+
+                    CONTEXT:
+                    - Letter title: {letterTitle}
+                    - Letter type: the acronym of the letter title
+                    - Current date: {DateTime.Now:MMMM d, yyyy}
+                    - Additional user instructions: {additionInstructions}
 
                     FIELDS TO EXTRACT:
                     {instructions}";
@@ -83,7 +87,7 @@ internal class Program
 
         Console.WriteLine($"Doc generated at {outputDocPath}");
 
-        Console.WriteLine("\nDone. Press any key to exit");
+        Console.WriteLine("\nDone. Please make sure to review the completed document. Press any key to exit");
         _ = Console.ReadKey();
     }
 }
