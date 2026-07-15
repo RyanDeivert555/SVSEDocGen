@@ -10,6 +10,8 @@
 
 internal class Program {
     internal static async Task Main() {
+        AiQuery.MakeClient();
+
         Console.WriteLine("Current files in directory: ");
         string[] fsFiles = System.IO.Directory.GetFiles(".");
         foreach (var file in fsFiles) {
